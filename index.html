@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>1초 기상 캐스터</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#2563eb" id="themeColor">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: linear-gradient(135deg, #3b82f6, #60a5fa);
+      color: #ffffff;
+      padding: 20px;
+      transition: background 0.5s ease;
+    }
+    body.rain-mode {
+      background: linear-gradient(135deg, #1e293b, #334155);
+    }
+    body.snow-mode {
+      background: linear-gradient(135deg, #475569, #94a3b8);
+    }
+    .app-card {
+      width: 100%;
+      max-width: 400px;
+      background: rgba(255, 255, 255, 0.16);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-radius: 28px;
+      padding: 28px 24px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.18);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      text-align: center;
+    }
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 14px;
+      opacity: 0.9;
+      margin-bottom: 24px;
+    }
+    .refresh-btn {
+      background: rgba(255, 255, 255, 0.22);
+      border: none;
+      color: white;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .refresh-btn:active { transform: scale(0.95); }
+    .weather-icon {
+      font-size: 84px;
+      line-height: 1.1;
+      margin-bottom: 12px;
+    }
+    .verdict {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      margin-bottom: 8px;
+    }
+    .sub-info {
+      font-size: 15px;
+      opacity: 0.9;
+      margin-bottom: 28px;
+    }
+    .checklist-box {
+      background: rgba(255, 255, 255, 0.95);
+      color: #1e293b;
+      border-radius: 20px;
+      padding: 20px;
+      text-align: left;
+    }
+    .checklist-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #64748b;
+      margin-bottom: 12px;
+    }
+    .item-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: #f1f5f9;
+      padding: 12px 14px;
+      border-radius: 14px;
+      font-size: 17px;
+      font-weight: 700;
+    }
+    .item-emoji { font-size: 24px; }
+  </style>
+</head>
+<body>
+  <div class="app-card">
+    <div class="top-bar">
+      <span id="locationText">📍 위치 확인 중...</span>
+      <button class="refresh-btn" onclick="initWeather()">🔄 새로고침</button>
+    </div>
+
+    <div class="weather-icon" id="mainIcon">⏳</div>
+    <div class="verdict" id="verdictText">날씨 불러오는 중...</div>
+    <div class="sub-info" id="subInfo">잠시만 기다려 주세요</div>
+
+    <div class="checklist-box">
+      <div class="checklist-title">⚡ 1초 외출 준비물 체크</div>
+      <div class="item-list" id="itemList">
+        <div class="item"><span class="item-emoji">🔍</span><span>날씨를 분석하고 있어요</span></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js');
+    }
+
+    function initWeather() {
+      document.getElementById('verdictText').innerText = '날씨 확인 중...';
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => fetchWeather(pos.coords.latitude, pos.coords.longitude, false),
+          () => fetchWeather(37.5665, 126.9780, true),
+          { timeout: 6000 }
+        );
+      } else {
+        fetchWeather(37.5665, 126.9780, true);
+      }
+    }
+
+    async function fetchWeather(lat, lon, isDefault) {
+      try {
+        if (isDefault) {
+          document.getElementById('locationText').innerText = '📍 서울 (기본 위치)';
+        } else {
+          fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=ko`)
+            .then(res => res.json())
+            .then(geo => {
+              const city = geo.city || geo.locality || '현재 위치';
+              document.getElementById('locationText').innerText = `📍 ${city}`;
+            })
+            .catch(() => {
+              document.getElementById('locationText').innerText = '📍 현재 위치';
+            });
+        }
+
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}¤t=temperature_2m,precipitation,rain,showers,snowfall,weather_code&daily=precipitation_probability_max,temperature_2m_max,temperature_2m_min&timezone=auto`;
+        const res = await fetch(url);
+        const data = await res.json();
+
+        const temp = Math.round(data.current.temperature_2m);
+        const code = data.current.weather_code;
+        const rainProb = data.daily.precipitation_probability_max[0] || 0;
+        const maxTemp = Math.round(data.daily.temperature_2m_max[0]);
+        const minTemp = Math.round(data.daily.temperature_2m_min[0]);
+
+        renderUI(temp, code, rainProb, maxTemp, minTemp);
+      } catch (err) {
+        document.getElementById('mainIcon').innerText = '⚠️';
+        document.getElementById('verdictText').innerText = '날씨 연결 실패';
+        document.getElementById('subInfo').innerText = '인터넷 연결을 확인한 뒤 새로고침을 눌러주세요.';
+      }
+    }
+
+    function renderUI(temp, code, rainProb, maxTemp, minTemp) {
+      const body = document.body;
+      const themeMeta = document.getElementById('themeColor');
+      const mainIcon = document.getElementById('mainIcon');
+      const verdictText = document.getElementById('verdictText');
+      const subInfo = document.getElementById('subInfo');
+      const itemList = document.getElementById('itemList');
+
+      body.className = '';
+      const rainCodes = [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99];
+      const snowCodes = [71, 73, 75, 77, 85, 86];
+
+      const isRainingNow = rainCodes.includes(code);
+      const isSnowingNow = snowCodes.includes(code);
+      const isHighRainChance = rainProb >= 50;
+
+      let items = [];
+
+      if (isSnowingNow) {
+        body.classList.add('snow-mode');
+        themeMeta.content = '#475569';
+        mainIcon.innerText = '❄️';
+        verdictText.innerText = '오늘은 눈이 와요!';
+        items = [
+          { emoji: '☂️', text: '우산 챙기기' },
+          { emoji: '🧤', text: '장갑 · 목도리 착용' },
+          { emoji: '🥾', text: '미끄럽지 않은 신발' }
+        ];
+      } else if (isRainingNow) {
+        body.classList.add('rain-mode');
+        themeMeta.content = '#1e293b';
+        mainIcon.innerText = '☔';
+        verdictText.innerText = '지금 비가 오는 날이에요!';
+        items = [
+          { emoji: '☂️', text: '우산 필수!' },
+          { emoji: '👟', text: '젖어도 괜찮은 신발' },
+          { emoji: '🧥', text: temp <= 15 ? '따뜻한 방수 외투' : '가벼운 바람막이' }
+        ];
+      } else if (isHighRainChance) {
+        body.classList.add('rain-mode');
+        themeMeta.content = '#1e293b';
+        mainIcon.innerText = '🌦️';
+        verdictText.innerText = '곧 비가 올 확률이 높아요!';
+        items = [
+          { emoji: '🌂', text: '접이식 우산 가방에 쏙' },
+          { emoji: '👟', text: '밝은 색 신발은 피하기' },
+          { emoji: '🧥', text: temp <= 15 ? '따뜻한 겉옷' : '얇은 가디건 · 바람막이' }
+        ];
+      } else {
+        themeMeta.content = '#2563eb';
+        mainIcon.innerText = (code === 0 || code === 1) ? '☀️' : '⛅';
+        verdictText.innerText = '비 소식 없는 날이에요!';
+
+        if (temp <= 10) {
+          items = [
+            { emoji: '🧥', text: '두꺼운 외투 · 패딩' },
+            { emoji: '🧣', text: '목도리 또는 핫팩' },
+            { emoji: '💧', text: '립밤 · 핸드크림' }
+          ];
+        } else if (temp <= 22) {
+          items = [
+            { emoji: '🧥', text: '입고 벗기 편한 겉옷' },
+            { emoji: '😎', text: '선글라스 (햇빛 차단)' },
+            { emoji: '🥤', text: '개인 물병 챙기기' }
+          ];
+        } else {
+          items = [
+            { emoji: '🧴', text: '자외선 차단제(선크림)' },
+            { emoji: '🕶️', text: '선글라스 · 모자' },
+            { emoji: '🧊', text: '시원한 물 · 휴대용 선풍기' }
+          ];
+        }
+      }
+
+      subInfo.innerText = `현재 ${temp}°C (최저 ${minTemp}° / 최고 ${maxTemp}°) · 강수확률 ${rainProb}%`;
+
+      itemList.innerHTML = items.map(item => `
+        <div class="item">
+          <span class="item-emoji">${item.emoji}</span>
+          <span>${item.text}</span>
+        </div>
+      `).join('');
+    }
+
+    initWeather();
+  </script>
+</body>
+</html>
